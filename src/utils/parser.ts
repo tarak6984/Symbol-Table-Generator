@@ -1,5 +1,14 @@
 import type { Symbol, SupportedLanguage } from '../types/symbol';
 
+interface BuiltInObject {
+  type: string;
+  methods: string[];
+}
+
+type BuiltInObjects = {
+  [key: string]: BuiltInObject;
+};
+
 export function parseCode(code: string, language: SupportedLanguage): Symbol[] {
   const symbols: Symbol[] = [];
   const lines = code.split('\n');
@@ -68,29 +77,169 @@ function isComment(line: string, language: SupportedLanguage): boolean {
   return commentPatterns[language]?.some(pattern => pattern.test(line)) || false;
 }
 
-function parseJavaScript(line: string, lineNumber: number, scope: string, scopeStack: string[], symbols: Symbol[], language: string) {
-  // Function declarations
-  const functionMatch = line.match(/function\s+(\w+)\s*\(/);
-  if (functionMatch) {
-    addSymbol(symbols, functionMatch[1], 'function', scope, lineNumber, language);
-    scopeStack.push(functionMatch[1]);
+// Built-in JavaScript objects and their methods
+const JS_BUILTINS: BuiltInObjects = {
+  'console': {
+    type: 'builtin',
+    methods: ['log', 'warn', 'error', 'info', 'debug', 'assert', 'clear', 'count', 'dir', 'dirxml', 'group', 'groupCollapsed', 'groupEnd', 'table', 'time', 'timeEnd', 'timeLog', 'trace']
+  },
+  'Math': {
+    type: 'builtin',
+    methods: ['abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atan2', 'atanh', 'cbrt', 'ceil', 'clz32', 'cos', 'cosh', 'exp', 'expm1', 'floor', 'fround', 'hypot', 'imul', 'log', 'log10', 'log1p', 'log2', 'max', 'min', 'pow', 'random', 'round', 'sign', 'sin', 'sinh', 'sqrt', 'tan', 'tanh', 'trunc']
+  },
+  'Array': {
+    type: 'builtin',
+    methods: ['from', 'isArray', 'of']
+  },
+  'Object': {
+    type: 'builtin',
+    methods: ['keys', 'values', 'entries', 'fromEntries', 'assign', 'create', 'defineProperty', 'defineProperties', 'getOwnPropertyDescriptor', 'getOwnPropertyDescriptors', 'getOwnPropertyNames', 'getOwnPropertySymbols', 'getPrototypeOf', 'setPrototypeOf', 'is', 'preventExtensions', 'isExtensible', 'seal', 'isSealed', 'freeze', 'isFrozen']
+  },
+  'Map': {
+    type: 'builtin',
+    methods: ['set', 'get', 'has', 'delete', 'clear', 'entries', 'forEach', 'keys', 'values', 'size']
+  },
+  'Set': {
+    type: 'builtin',
+    methods: ['add', 'clear', 'delete', 'entries', 'forEach', 'has', 'values', 'size']
+  },
+  'Date': {
+    type: 'builtin',
+    methods: ['now', 'parse', 'UTC', 'prototype.getDate', 'prototype.getDay', 'prototype.getFullYear', 'prototype.getHours', 'prototype.getMilliseconds', 'prototype.getMinutes', 'prototype.getMonth', 'prototype.getSeconds', 'prototype.getTime', 'prototype.getTimezoneOffset', 'prototype.getUTCDate', 'prototype.getUTCDay', 'prototype.getUTCFullYear', 'prototype.getUTCHours', 'prototype.getUTCMilliseconds', 'prototype.getUTCMinutes', 'prototype.getUTCMonth', 'prototype.getUTCSeconds', 'prototype.setDate', 'prototype.setFullYear', 'prototype.setHours', 'prototype.setMilliseconds', 'prototype.setMinutes', 'prototype.setMonth', 'prototype.setSeconds', 'prototype.setTime', 'prototype.setUTCDate', 'prototype.setUTCFullYear', 'prototype.setUTCHours', 'prototype.setUTCMilliseconds', 'prototype.setUTCMinutes', 'prototype.setUTCMonth', 'prototype.setUTCSeconds', 'prototype.toDateString', 'prototype.toISOString', 'prototype.toJSON', 'prototype.toLocaleDateString', 'prototype.toLocaleString', 'prototype.toLocaleTimeString', 'prototype.toString', 'prototype.toTimeString', 'prototype.toUTCString', 'prototype.valueOf']
+  },
+  'JSON': {
+    type: 'builtin',
+    methods: ['parse', 'stringify']
+  },
+  'Promise': {
+    type: 'builtin',
+    methods: ['all', 'allSettled', 'any', 'race', 'reject', 'resolve']
+  },
+  'String': {
+    type: 'builtin',
+    methods: ['fromCharCode', 'fromCodePoint', 'raw', 'prototype.charAt', 'prototype.charCodeAt', 'prototype.codePointAt', 'prototype.concat', 'prototype.endsWith', 'prototype.includes', 'prototype.indexOf', 'prototype.lastIndexOf', 'prototype.localeCompare', 'prototype.match', 'prototype.matchAll', 'prototype.normalize', 'prototype.padEnd', 'prototype.padStart', 'prototype.repeat', 'prototype.replace', 'prototype.search', 'prototype.slice', 'prototype.split', 'prototype.startsWith', 'prototype.substring', 'prototype.toLocaleLowerCase', 'prototype.toLocaleUpperCase', 'prototype.toLowerCase', 'prototype.toString', 'prototype.toUpperCase', 'prototype.trim', 'prototype.trimEnd', 'prototype.trimStart', 'prototype.valueOf']
+  },
+  'Number': {
+    type: 'builtin',
+    methods: ['isFinite', 'isInteger', 'isNaN', 'isSafeInteger', 'parseFloat', 'parseInt', 'prototype.toExponential', 'prototype.toFixed', 'prototype.toLocaleString', 'prototype.toPrecision', 'prototype.toString', 'prototype.valueOf']
+  },
+  'Array.prototype': {
+    type: 'builtin',
+    methods: ['concat', 'copyWithin', 'entries', 'every', 'fill', 'filter', 'find', 'findIndex', 'flat', 'flatMap', 'forEach', 'includes', 'indexOf', 'join', 'keys', 'lastIndexOf', 'map', 'pop', 'push', 'reduce', 'reduceRight', 'reverse', 'shift', 'slice', 'some', 'sort', 'splice', 'toLocaleString', 'toString', 'unshift', 'values']
+  }
+};
+
+function parseJavaScript(line: string, lineNumber: number, scope: string, scopeStack: string[], symbols: Symbol[], language: SupportedLanguage) {
+  // Skip comments and empty lines
+  if (isComment(line, language) || !line.trim()) {
     return;
   }
 
   // Class declarations
   const classMatch = line.match(/class\s+(\w+)/);
   if (classMatch) {
-    addSymbol(symbols, classMatch[1], 'class', scope, lineNumber, language);
-    scopeStack.push(classMatch[1]);
+    const className = classMatch[1];
+    addSymbol(symbols, className, 'class', scope, lineNumber, language, 'Class definition');
+    scopeStack.push(className);
     return;
   }
 
-  // Variable declarations
-  const variableMatch = line.match(/(?:let|const|var)\s+(\w+)/);
-  if (variableMatch) {
-    const type = line.includes('const') ? 'constant' : 'variable';
-    addSymbol(symbols, variableMatch[1], type, scope, lineNumber, language);
+  // Constructor method
+  const constructorMatch = line.match(/constructor\s*\(/);
+  if (constructorMatch && scopeStack[scopeStack.length - 1] !== 'global') {
+    addSymbol(symbols, 'constructor', 'constructor', scope, lineNumber, language, 'Constructor method');
     return;
+  }
+
+  // Method definitions (class methods)
+  const methodMatch = line.match(/(\w+)\s*\([^)]*\)\s*\{/);
+  if (methodMatch && scopeStack[scopeStack.length - 1] !== 'global') {
+    const methodName = methodMatch[1];
+    // Skip if it's a built-in method
+    if (!['if', 'for', 'while', 'switch', 'catch', 'function', 'class'].includes(methodName)) {
+      addSymbol(symbols, methodName, 'method', scope, lineNumber, language, 'Instance method');
+    }
+    return;
+  }
+
+  // Class property (this.property = value)
+  const propertyMatch = line.match(/this\.(\w+)\s*[=;]/);
+  if (propertyMatch && scopeStack[scopeStack.length - 1] !== 'global') {
+    const propName = propertyMatch[1];
+    addSymbol(symbols, propName, 'property', scope, lineNumber, language, 'Instance property');
+    return;
+  }
+
+  // Static class property (Class.property = value)
+  const staticPropMatch = line.match(/(\w+)\.(\w+)\s*=/);
+  if (staticPropMatch) {
+    const className = staticPropMatch[1];
+    const propName = staticPropMatch[2];
+    // Check if the class is in our current scope
+    if (scopeStack.includes(className)) {
+      addSymbol(symbols, `${className}.${propName}`, 'property', className, lineNumber, language, 'Static class property');
+    }
+  }
+
+  // Function declarations
+  const functionMatch = line.match(/function\s+(\w+)\s*\(/);
+  if (functionMatch) {
+    const funcName = functionMatch[1];
+    addSymbol(symbols, funcName, 'function', scope, lineNumber, language, 'Function definition');
+    scopeStack.push(funcName);
+    return;
+  }
+
+  // Variable declarations (const, let, var)
+  const variableMatch = line.match(/(?:const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?/);
+  if (variableMatch) {
+    const varName = variableMatch[1];
+    const varType = variableMatch[2] || 'any';
+    const isConst = line.includes('const');
+    const symbolType = isConst ? 'constant' : 'variable';
+    const description = isConst ? 'Constant value' : `Variable of type ${varType}`;
+    
+    addSymbol(symbols, varName, symbolType, scope, lineNumber, language, description, varType);
+    return;
+  }
+
+  // This assignment (this.x = value)
+  const thisAssignmentMatch = line.match(/this\.(\w+)\s*=\s*[^;]+/);
+  if (thisAssignmentMatch) {
+    const propName = thisAssignmentMatch[1];
+    addSymbol(symbols, propName, 'property', scope, lineNumber, language, 'Instance property');
+    return;
+  }
+
+  // Class instance creation (new Class())
+  const newInstanceMatch = line.match(/new\s+(\w+)\s*\(/);
+  if (newInstanceMatch) {
+    const className = newInstanceMatch[1];
+    // Only add if it's not a built-in and we haven't seen it before
+    if (!(className in JS_BUILTINS) && !symbols.some(s => s.name === className && s.type === 'class')) {
+      addSymbol(symbols, className, 'class', 'global', lineNumber, language, 'Class instantiation');
+    }
+  }
+
+  // Method calls (object.method())
+  const methodCallMatch = line.match(/(\w+)\.(\w+)\s*\(/);
+  if (methodCallMatch) {
+    const objectName = methodCallMatch[1];
+    const methodName = methodCallMatch[2];
+    
+    // Type-safe check for built-in methods
+    const builtIn = JS_BUILTINS[objectName as keyof typeof JS_BUILTINS];
+    if (builtIn?.methods.includes(methodName)) {
+      addSymbol(
+        symbols, 
+        `${objectName}.${methodName}`, 
+        'builtin', 
+        'global', 
+        lineNumber, 
+        language, 
+        'Built-in method'
+      );
+    }
   }
 
   // Import statements
@@ -99,9 +248,9 @@ function parseJavaScript(line: string, lineNumber: number, scope: string, scopeS
     const imported = importMatch[1] || importMatch[2] || importMatch[3];
     if (imported) {
       imported.split(',').forEach(name => {
-        const cleanName = name.trim();
+        const cleanName = name.trim().replace(/\s+as\s+\w+$/, ''); // Remove 'as' alias
         if (cleanName) {
-          addSymbol(symbols, cleanName, 'import', scope, lineNumber, language);
+          addSymbol(symbols, cleanName, 'import', scope, lineNumber, language, 'Imported module or member');
         }
       });
     }
@@ -400,15 +549,32 @@ function parseRust(line: string, lineNumber: number, scope: string, scopeStack: 
   }
 }
 
-function addSymbol(symbols: Symbol[], name: string, type: Symbol['type'], scope: string, line: number, language: string, dataType?: string) {
-  symbols.push({
-    name,
-    type,
-    scope,
-    line,
-    dataType,
-    language
-  });
+
+
+function addSymbol(symbols: Symbol[], name: string, type: Symbol['type'], scope: string, line: number, language: string, description?: string, dataType?: string) {
+  // Skip empty names
+  if (!name) return;
+
+  // Clean up the name (remove quotes, trim)
+  const cleanName = name.replace(/['"]/g, '').trim();
+  if (!cleanName) return;
+
+  // Skip if symbol already exists with the same scope and line
+  const exists = symbols.some(s => 
+    s.name === cleanName && s.scope === scope && s.line === line
+  );
+  
+  if (!exists) {
+    symbols.push({ 
+      name: cleanName, 
+      type, 
+      scope, 
+      line, 
+      language, 
+      dataType: dataType || (description && description.includes('type') ? description.split('type ')[1] : undefined),
+      description: description || ''
+    });
+  }
 }
 
 function updateScope(line: string, scopeStack: string[], updateCurrentScope: (scope: string) => void) {

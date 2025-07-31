@@ -60,6 +60,8 @@ const SymbolTable: React.FC<SymbolTableProps> = ({ symbols, isLoading }) => {
       case 'import': return 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20';
       case 'parameter': return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
       case 'builtin': return 'text-pink-400 bg-pink-400/10 border-pink-400/20';
+      case 'property': return 'text-indigo-400 bg-indigo-400/10 border-indigo-400/20';
+      case 'constructor': return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
       default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
     }
   };
@@ -71,6 +73,119 @@ const SymbolTable: React.FC<SymbolTableProps> = ({ symbols, isLoading }) => {
       case 'local': return 'text-blue-400 bg-blue-400/10';
       default: return 'text-orange-400 bg-orange-400/10';
     }
+  };
+
+  const headers = [
+    { key: 'name', label: 'Identifier', className: 'w-1/6' },
+    { key: 'type', label: 'Type', className: 'w-1/6' },
+    { key: 'scope', label: 'Scope', className: 'w-1/6' },
+    { key: 'dataType', label: 'Data Type', className: 'w-1/6' },
+    { key: 'description', label: 'Description', className: 'w-1/3' },
+  ];
+
+  const getTypeName = (type: string) => {
+    const typeMap: Record<string, string> = {
+      'variable': 'Variable',
+      'function': 'Function',
+      'class': 'Class',
+      'method': 'Method',
+      'constant': 'Constant',
+      'import': 'Import',
+      'parameter': 'Parameter',
+      'builtin': 'Built-in',
+      'property': 'Property',
+      'constructor': 'Constructor',
+      'prototype': 'Prototype'
+    };
+    return typeMap[type] || type.split('.').map(t => 
+      t === 'prototype' ? 'Prototype' : 
+      t.charAt(0).toUpperCase() + t.slice(1)
+    ).join('.');
+  };
+
+  const getSymbolDescription = (symbol: Symbol): string => {
+    switch (symbol.type) {
+      case 'class':
+        return 'Class definition';
+      case 'constructor':
+        return 'Constructor method';
+      case 'method':
+        return 'Instance method';
+      case 'function':
+        return 'Function definition';
+      case 'variable':
+        return `Variable of type ${symbol.dataType || 'unknown'}`;
+      case 'constant':
+        return `Constant value`;
+      case 'import':
+        return 'Imported module or member';
+      case 'builtin':
+        return 'Built-in language feature';
+      case 'property':
+        return `Property of type ${symbol.dataType || 'unknown'}`;
+      default:
+        return '';
+    }
+  };
+
+  const renderTableRows = () => {
+    if (filteredSymbols.length === 0) {
+      return (
+        <tr>
+          <td colSpan={headers.length} className="px-6 py-4 text-center text-slate-400">
+            {symbols.length === 0 ? 'No symbols found in the code' : 'No symbols match your search/filter criteria'}
+          </td>
+        </tr>
+      );
+    }
+
+    return filteredSymbols.map((symbol, index) => {
+      const typeColor = getTypeColor(symbol.type);
+      const scopeColor = getScopeColor(symbol.scope);
+      const description = symbol.description || getSymbolDescription(symbol);
+      
+      // Format the symbol name for display
+      const displayName = symbol.name.includes('.') 
+        ? <span><span className="text-slate-400">{symbol.name.split('.')[0]}.</span>{symbol.name.split('.').slice(1).join('.')}</span>
+        : symbol.name;
+      
+      return (
+        <tr 
+          key={`${symbol.name}-${symbol.scope}-${symbol.line}-${index}`} 
+          className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors"
+        >
+          <td className="px-4 py-3">
+            <div className="flex items-center">
+              <Code2 className={`w-4 h-4 mr-2 flex-shrink-0 ${typeColor.replace('bg-', 'text-').split('/')[0]}`} />
+              <code className="text-sm font-mono text-white break-all">
+                {displayName}
+              </code>
+            </div>
+          </td>
+          <td className="px-4 py-3">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${typeColor}`}>
+              {getTypeName(symbol.type)}
+            </span>
+          </td>
+          <td className="px-4 py-3">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${scopeColor}`}>
+              {symbol.scope === 'global' ? 'Global' : 
+               symbol.scope === 'local' ? 'Local' : 
+               symbol.scope.charAt(0).toUpperCase() + symbol.scope.slice(1)}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-sm text-slate-300 font-mono">
+            {symbol.dataType || '-'}
+          </td>
+          <td className="px-4 py-3 text-sm text-slate-400">
+            {description}
+            {symbol.line && (
+              <span className="text-xs text-slate-500 ml-2">(line {symbol.line})</span>
+            )}
+          </td>
+        </tr>
+      );
+    });
   };
 
   if (isLoading) {
@@ -126,105 +241,27 @@ const SymbolTable: React.FC<SymbolTableProps> = ({ symbols, isLoading }) => {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        {filteredSymbols.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">
-            {symbols.length === 0 ? (
-              <>
-                <div className="text-4xl mb-2">📝</div>
-                <p>No symbols found in your code</p>
-                <p className="text-sm mt-1">Try adding some variable declarations or functions</p>
-              </>
-            ) : (
-              <p>No symbols match your search criteria</p>
-            )}
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead className="bg-slate-700">
-              <tr>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                  onClick={() => handleSort('name')}
+        <table className="w-full">
+          <thead className="bg-slate-700">
+            <tr>
+              {headers.map((header) => (
+                <th
+                  key={header.key}
+                  onClick={() => header.key !== 'description' ? handleSort(header.key as keyof Symbol) : null}
+                  className={`px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider ${header.key !== 'description' ? 'cursor-pointer hover:bg-slate-700/50 transition-colors' : ''} ${header.className || ''}`}
                 >
-                  <div className="flex items-center gap-2">
-                    Identifier
-                    {getSortIcon('name')}
+                  <div className="flex items-center">
+                    {header.label}
+                    {header.key !== 'description' && getSortIcon(header.key as keyof Symbol)}
                   </div>
                 </th>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                  onClick={() => handleSort('type')}
-                >
-                  <div className="flex items-center gap-2">
-                    Type
-                    {getSortIcon('type')}
-                  </div>
-                </th>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                  onClick={() => handleSort('scope')}
-                >
-                  <div className="flex items-center gap-2">
-                    Scope
-                    {getSortIcon('scope')}
-                  </div>
-                </th>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                  onClick={() => handleSort('dataType')}
-                >
-                  <div className="flex items-center gap-2">
-                    Value / Description
-                    {getSortIcon('dataType')}
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700">
-              {filteredSymbols.map((symbol, index) => {
-                // Format the description based on symbol type
-                const getDescription = () => {
-                  if (symbol.type === 'builtin') {
-                    return symbol.dataType || 'Built-in function';
-                  } else if (symbol.type === 'variable') {
-                    return symbol.dataType ? `Stores ${symbol.dataType} value` : 'Variable';
-                  } else if (symbol.type === 'import') {
-                    return 'Imported module or function';
-                  } else if (symbol.type === 'function') {
-                    return `Defined at line ${symbol.line}`;
-                  }
-                  return symbol.dataType || 'Symbol';
-                };
-
-                // Format the display name
-                const displayName = symbol.name.startsWith('__') && symbol.name.endsWith('__') 
-                  ? `\`${symbol.name}\`` 
-                  : symbol.name;
-
-                return (
-                  <tr key={index} className="hover:bg-slate-700/50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-sm text-white font-medium">
-                      <code>{displayName}</code>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium border ${getTypeColor(symbol.type)}`}>
-                        {symbol.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${getScopeColor(symbol.scope)}`}>
-                        {symbol.scope === 'builtins' ? 'Built-in' : symbol.scope}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">
-                      {getDescription()}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700">
+            {renderTableRows()}
+          </tbody>
+        </table>
       </div>
       
       {/* Language Statistics */}

@@ -2,6 +2,8 @@
 
 A modern web application for generating and visualizing symbol tables from code. Built with React, TypeScript, and Vite, this tool helps developers understand the structure of their code by parsing and displaying symbol information in an interactive interface.
 
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-000?style=for-the-badge&logo=vercel&logoColor=white)](https://symbol-table-generator.vercel.app/)
+
 ![Symbol Table Generator Preview](https://via.placeholder.com/800x400?text=Symbol+Table+Generator+Preview)
 
 ## Features
