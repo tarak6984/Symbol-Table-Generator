@@ -61,7 +61,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
           ref={lineNumbersRef}
           className="px-3 py-4 text-sm font-mono select-none border-r border-[var(--editor-border)] min-w-[3rem] text-right overflow-y-auto"
           style={{ 
-            color: 'var(--editor-line-numbers)', 
+            color: '#ffffff80',  // Slightly transparent white for line numbers
             backgroundColor: 'var(--editor-header-bg)',
             scrollbarWidth: 'none',
             msOverflowStyle: 'none'
@@ -114,7 +114,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
             
             {/* Visible code */}
             <pre 
-              className="absolute inset-0 p-4 m-0 font-mono"
+              className="absolute inset-0 p-4 m-0 font-mono text-white"
               style={{
                 fontFamily: 'Fira Code, Menlo, Monaco, Consolas, monospace',
                 fontSize: '15px',
@@ -130,7 +130,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
                 wordBreak: 'break-word',
                 tabSize: 2,
                 overflow: 'visible',
-                textAlign: 'left'
+                textAlign: 'left',
+                color: '#ffffff'  // Ensure white text
               }}
             >
               {processedLines.map((line, index) => (
