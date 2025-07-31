@@ -4,8 +4,6 @@ A modern web application for generating and visualizing symbol tables from code.
 
 [![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-000?style=for-the-badge&logo=vercel&logoColor=white)](https://symbol-table-generator.vercel.app/)
 
-![Symbol Table Generator Preview](https://via.placeholder.com/800x400?text=Symbol+Table+Generator+Preview)
-
 ## Features
 
 - **Real-time Parsing**: Instantly parse code and generate symbol tables
