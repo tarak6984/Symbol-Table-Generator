@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom font for code editor */
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap');
+@font-face {
+  font-family: 'Fira Code';
+  src: url('https://cdn.jsdelivr.net/gh/tonsky/FiraCode@5.2/distr/woff2/FiraCode-Regular.woff2') format('woff2'),
+       url('https://cdn.jsdelivr.net/gh/tonsky/FiraCode@5.2/distr/woff/FiraCode-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Base styles for code blocks */
+.code-editor {
+  --editor-bg: #1e1e1e;
+  --editor-header-bg: #252526;
+  --editor-border: #3c3c3c;
+  --editor-line-numbers: #858585;
+  --editor-text: #f0f0f0;
+  --editor-selection: #264f78;
+  --editor-cursor: #a6a6a6;
+  
+  /* Enhanced syntax highlighting colors with better contrast */
+  --syntax-keyword: #569cd6;
+  --syntax-type: #4ec9b0;
+  --syntax-string: #ce9178;
+  --syntax-number: #b5cea8;
+  --syntax-comment: #6a9955;
+  --syntax-function: #dcdcaa;
+  --syntax-operator: #d4d4d4;
+  --syntax-variable: #9cdcfe;
+  
+  /* Font settings */
+  --font-size: 15px;
+  --line-height: 1.7;
+  --letter-spacing: 0.3px;
+}
+
+/* Custom scrollbar for code editor */
+.code-editor ::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.code-editor ::-webkit-scrollbar-track {
+  background: var(--editor-bg);
+}
+
+.code-editor ::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 5px;
+}
+
+.code-editor ::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+/* Improve code readability */
+.code-line {
+  line-height: var(--line-height);
+  letter-spacing: var(--letter-spacing);
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: var(--font-size);
+  color: var(--editor-text);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-weight: 450;
+  text-shadow: 0 0 0.5px rgba(255, 255, 255, 0.15);
+  font-variant-ligatures: contextual;
+  font-feature-settings: 'calt' 1, 'liga' 1, 'dlig' 1;
+}
+
+/* Selection style */
+.code-editor ::selection {
+  background-color: var(--editor-selection);
+  color: white;
+}
+
+/* Cursor style */
+.code-editor textarea {
+  caret-color: var(--editor-cursor);
+}
+
+/* Add subtle animation for better UX */
+@keyframes fadeIn {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+
+.code-editor {
+  animation: fadeIn 0.3s ease-in-out;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s ease;
+}
+
+.code-editor:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .code-line {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+}
