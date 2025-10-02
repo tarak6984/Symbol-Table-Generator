@@ -181,25 +181,64 @@ function parseJavaScript(line: string, lineNumber: number, scope: string, scopeS
     }
   }
 
-  // Function declarations
-  const functionMatch = line.match(/function\s+(\w+)\s*\(/);
+  // Function declarations with parameters
+  const functionMatch = line.match(/function\s+(\w+)\s*\(([^)]*)\)/);
   if (functionMatch) {
     const funcName = functionMatch[1];
-    addSymbol(symbols, funcName, 'function', scope, lineNumber, language, 'Function definition');
+    const params = functionMatch[2];
+    
+    addSymbol(symbols, funcName, 'function', scope, lineNumber, language, 'Function definition', 'function');
+    
+    // Parse function parameters
+    if (params.trim()) {
+      const paramList = params.split(',').map(p => p.trim());
+      paramList.forEach(param => {
+        const paramMatch = param.match(/(\w+)(?:\s*:\s*(\w+))?/);
+        if (paramMatch) {
+          const paramName = paramMatch[1];
+          const paramType = paramMatch[2] || 'any';
+          addSymbol(symbols, paramName, 'parameter', 'local', lineNumber, language, `Parameter of type ${paramType}`, paramType);
+        }
+      });
+    }
+    
     scopeStack.push(funcName);
     return;
   }
 
-  // Variable declarations (const, let, var)
-  const variableMatch = line.match(/(?:const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?/);
+  // Variable declarations (const, let, var) with type inference
+  const variableMatch = line.match(/(?:const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?\s*=?\s*([^;,\n]*)/);
   if (variableMatch) {
     const varName = variableMatch[1];
-    const varType = variableMatch[2] || 'any';
+    const explicitType = variableMatch[2];
+    const assignment = variableMatch[3]?.trim();
     const isConst = line.includes('const');
     const symbolType = isConst ? 'constant' : 'variable';
-    const description = isConst ? 'Constant value' : `Variable of type ${varType}`;
     
-    addSymbol(symbols, varName, symbolType, scope, lineNumber, language, description, varType);
+    let inferredType = explicitType || 'any';
+    
+    // Type inference from assignment if no explicit type
+    if (!explicitType && assignment) {
+      if (/^["'`].*["'`]$/.test(assignment)) {
+        inferredType = 'string';
+      } else if (/^\d+$/.test(assignment)) {
+        inferredType = 'number';
+      } else if (/^\d+\.\d+$/.test(assignment)) {
+        inferredType = 'number';
+      } else if (/^(true|false)$/.test(assignment)) {
+        inferredType = 'boolean';
+      } else if (/^\[.*\]$/.test(assignment)) {
+        inferredType = 'Array';
+      } else if (/^\{.*\}$/.test(assignment)) {
+        inferredType = 'Object';
+      } else if (/^new\s+(\w+)/.test(assignment)) {
+        const classMatch = assignment.match(/^new\s+(\w+)/);
+        inferredType = classMatch ? classMatch[1] : 'Object';
+      }
+    }
+    
+    const description = isConst ? 'Constant value' : `Variable of type ${inferredType}`;
+    addSymbol(symbols, varName, symbolType, scope, lineNumber, language, description, inferredType);
     return;
   }
 
@@ -270,11 +309,36 @@ const PYTHON_BUILTINS = new Set([
 ]);
 
 function parsePython(line: string, lineNumber: number, scope: string, scopeStack: string[], symbols: Symbol[], language: string) {
-  // Function definitions
-  const functionMatch = line.match(/def\s+(\w+)\s*\(/);
+  // Function definitions with parameters and return type annotation
+  const functionMatch = line.match(/def\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*(\w+))?/);
   if (functionMatch) {
-    addSymbol(symbols, functionMatch[1], 'function', scope, lineNumber, language);
-    scopeStack.push(functionMatch[1]);
+    const funcName = functionMatch[1];
+    const params = functionMatch[2];
+    const returnType = functionMatch[3] || 'Any';
+    
+    // Determine if it's a method or function based on scope
+    const isMethod = scopeStack.length > 1 && scopeStack[scopeStack.length - 1] !== 'global';
+    const symbolType = isMethod ? 'method' : 'function';
+    
+    addSymbol(symbols, funcName, symbolType, scope, lineNumber, language, `${isMethod ? 'Method' : 'Function'} returning ${returnType}`, returnType);
+    
+    // Parse function parameters
+    if (params.trim()) {
+      const paramList = params.split(',').map(p => p.trim());
+      paramList.forEach(param => {
+        // Skip 'self' parameter for methods
+        if (param === 'self') return;
+        
+        const paramMatch = param.match(/(\w+)(?:\s*:\s*(\w+))?/);
+        if (paramMatch) {
+          const paramName = paramMatch[1];
+          const paramType = paramMatch[2] || 'Any';
+          addSymbol(symbols, paramName, 'parameter', 'local', lineNumber, language, `Parameter of type ${paramType}`, paramType);
+        }
+      });
+    }
+    
+    scopeStack.push(funcName);
     return;
   }
 
@@ -291,30 +355,100 @@ function parsePython(line: string, lineNumber: number, scope: string, scopeStack
   if (typedVarMatch) {
     const varName = typedVarMatch[1];
     const varType = typedVarMatch[2];
-    addSymbol(symbols, varName, 'variable', scope, lineNumber, language, varType);
+    addSymbol(symbols, varName, 'variable', scope, lineNumber, language, `Variable of type ${varType}`, varType);
     return;
   }
 
-  // Simple variable assignments
-  const variableMatch = line.match(/^(\w+)\s*=/);
+  // Simple variable assignments with type inference
+  const variableMatch = line.match(/^(\w+)\s*=\s*(.+)/);
   if (variableMatch && !line.includes('def ') && !line.includes('class ')) {
     const varName = variableMatch[1];
-    // Don't add built-ins as variables
-    if (!PYTHON_BUILTINS.has(varName)) {
-      addSymbol(symbols, varName, 'variable', scope, lineNumber, language);
+    const assignment = variableMatch[2].trim();
+    // Allow variables with built-in names when they are being assigned (shadowing the built-in)
+    // Always allow variable assignments, even if they shadow built-ins
+    if (true) {
+      let inferredType = 'unknown';
+      let description = 'Variable of type ';
+      
+      // Enhanced type inference with value information
+      if (/^["'][^"']*["']/.test(assignment)) {
+        inferredType = 'str';
+        description += `str, initialized to ${assignment}`;
+      } else if (/^\d+$/.test(assignment)) {
+        inferredType = 'int';
+        description += `int, initialized to ${assignment}`;
+      } else if (/^\d+\.\d+$/.test(assignment)) {
+        inferredType = 'float';
+        description += `float, initialized to ${assignment}`;
+      } else if (/^(True|False)$/.test(assignment)) {
+        inferredType = 'bool';
+        description += `bool, initialized to ${assignment}`;
+      } else if (/^\[.*\]$/.test(assignment)) {
+        inferredType = 'list';
+        description += `list, initialized to ${assignment}`;
+      } else if (/^\{.*\}$/.test(assignment)) {
+        inferredType = 'dict';
+        description += `dict, initialized to ${assignment}`;
+      } else if (/^range\(/.test(assignment)) {
+        inferredType = 'range';
+        description += `range, initialized to ${assignment}`;
+      } else {
+        // Handle expressions like 'a + b'
+        inferredType = 'int'; // Default assumption for arithmetic expressions
+        description += `int, result of ${assignment}`;
+      }
+      
+      // Determine proper scope - if we're inside a function/method, it's local
+      const actualScope = (scopeStack.length > 1) ? 'local' : 'global';
+      addSymbol(symbols, varName, 'variable', actualScope, lineNumber, language, description, inferredType);
     }
     return;
   }
 
+  // F-string detection
+  const fStringMatch = line.match(/f["'][^"']*\{([^}]+)\}[^"']*["']/);
+  if (fStringMatch) {
+    // f-string found - this is a string literal with embedded expressions
+    const actualScope = (scopeStack.length > 1) ? 'local' : 'global';
+    addSymbol(symbols, 'f-string', 'string literal', actualScope, lineNumber, language, 'Formats and interpolates values of variables', 'str');
+  }
+  
   // Function calls (to detect built-ins)
   const functionCallMatch = line.match(/(\w+)\s*\(/g);
   if (functionCallMatch) {
     functionCallMatch.forEach(match => {
       const funcName = match.split('(')[0].trim();
       if (PYTHON_BUILTINS.has(funcName) && !symbols.some(s => s.name === funcName)) {
-        addSymbol(symbols, funcName, 'builtin', 'builtins', lineNumber, language, 'builtin_function_or_method');
+        let builtinType = 'builtin';
+        // Determine specific builtin type
+        if (['int', 'str', 'float', 'bool', 'list', 'dict', 'set', 'tuple'].includes(funcName)) {
+          builtinType = 'type';
+        }
+        addSymbol(symbols, funcName, 'builtin', 'global', lineNumber, language, 'Built-in function or type', builtinType);
       }
     });
+  }
+
+  // Instance attribute assignments (self.attribute = value)
+  const selfAttrMatch = line.match(/self\.(\w+)\s*=\s*(.*)/);
+  if (selfAttrMatch && scopeStack.length > 1) {
+    const attrName = selfAttrMatch[1];
+    const assignment = selfAttrMatch[2].trim();
+    
+    let inferredType = 'Any';
+    // Simple type inference for Python
+    if (/^["'][^"']*["']/.test(assignment)) {
+      inferredType = 'str';
+    } else if (/^\d+$/.test(assignment)) {
+      inferredType = 'int';
+    } else if (/^\d+\.\d+$/.test(assignment)) {
+      inferredType = 'float';
+    } else if (/^(True|False)$/.test(assignment)) {
+      inferredType = 'bool';
+    }
+    
+    addSymbol(symbols, attrName, 'property', 'local', lineNumber, language, `Instance attribute of type ${inferredType}`, inferredType);
+    return;
   }
 
   // Import statements
@@ -323,13 +457,13 @@ function parsePython(line: string, lineNumber: number, scope: string, scopeStack
     if (importMatch[1]) {
       // Simple import
       const moduleName = importMatch[1];
-      addSymbol(symbols, moduleName, 'import', 'global', lineNumber, language, 'module');
+      addSymbol(symbols, moduleName, 'import', 'global', lineNumber, language, 'Imported module', 'module');
     } else if (importMatch[2] && importMatch[3]) {
       // From ... import ...
       const importedItems = importMatch[3].split(',').map(s => s.trim().split(' as ')[0]);
       importedItems.forEach(item => {
         if (item) {
-          addSymbol(symbols, item, 'import', 'global', lineNumber, language, 'module');
+          addSymbol(symbols, item, 'import', 'global', lineNumber, language, 'Imported item', 'module');
         }
       });
     }
@@ -340,67 +474,230 @@ function parseJava(line: string, lineNumber: number, scope: string, scopeStack: 
   // Class declarations
   const classMatch = line.match(/(?:public\s+)?class\s+(\w+)/);
   if (classMatch) {
-    addSymbol(symbols, classMatch[1], 'class', scope, lineNumber, language);
-    scopeStack.push(classMatch[1]);
+    const className = classMatch[1];
+    addSymbol(symbols, className, 'class', 'global', lineNumber, language, 'Class definition', 'class');
+    scopeStack.push(className);
     return;
   }
 
-  // Method declarations
-  const methodMatch = line.match(/(?:public|private|protected)?\s*(?:static\s+)?(?:\w+\s+)+(\w+)\s*\(/);
-  if (methodMatch && !line.includes('class ')) {
-    addSymbol(symbols, methodMatch[1], 'method', scope, lineNumber, language);
-    scopeStack.push(methodMatch[1]);
+  // Method declarations with proper return type extraction
+  const methodMatch = line.match(/(?:public|private|protected)?\s*(?:static\s+)?(\w+(?:\[\])?(?:<[^>]+>)?)\s+(\w+)\s*\(([^)]*)\)\s*\{?/);
+  if (methodMatch && !line.includes('class ') && !line.includes('import ') && !line.includes(' = ') && !line.includes('new ')) {
+    const returnType = methodMatch[1];
+    const methodName = methodMatch[2];
+    const params = methodMatch[3];
+    
+    addSymbol(symbols, methodName, 'method', 'global', lineNumber, language, `Method returning ${returnType}`, returnType);
+    
+    // Parse method parameters
+    if (params.trim()) {
+      const paramList = params.split(',').map(p => p.trim());
+      paramList.forEach(param => {
+        const paramMatch = param.match(/(\w+(?:\[\])?(?:<[^>]+>)?)\s+(\w+)/);
+        if (paramMatch) {
+          const paramType = paramMatch[1];
+          const paramName = paramMatch[2];
+          addSymbol(symbols, paramName, 'parameter', 'local', lineNumber, language, `Parameter of type ${paramType}`, paramType);
+        }
+      });
+    }
+    
+    scopeStack.push(methodName);
     return;
   }
 
-  // Variable declarations
-  const variableMatch = line.match(/(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?(\w+)\s+(\w+)/);
-  if (variableMatch && !line.includes('(') && !line.includes('class ')) {
-    const type = line.includes('final') ? 'constant' : 'variable';
-    addSymbol(symbols, variableMatch[2], type, scope, lineNumber, language, variableMatch[1]);
+  // Determine current scope - if we're inside a method/class, variables should be local
+  const currentScope = scopeStack.length > 1 ? 'local' : 'global';
+
+  // Local variable declarations inside methods (int a = 5;)
+  const localVarMatch = line.match(/^\s*(\w+)\s+(\w+)\s*=\s*([^;]+);?/);
+  if (localVarMatch && scopeStack.length > 1 && !line.includes('public') && !line.includes('private') && !line.includes('protected') && !line.includes('static')) {
+    const dataType = localVarMatch[1];
+    const varName = localVarMatch[2];
+    
+    // Verify it's a valid data type (not a method call or other construct)
+    const javaTypes = ['int', 'double', 'float', 'boolean', 'char', 'byte', 'short', 'long', 'String', 'Scanner'];
+    if (javaTypes.includes(dataType) || /^[A-Z]/.test(dataType)) {
+      addSymbol(symbols, varName, 'variable', 'local', lineNumber, language, `Variable of type ${dataType}`, dataType);
+      return;
+    }
+  }
+
+  // Variable declarations with proper data type extraction (class-level or method-level)
+  const variableMatch = line.match(/(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?(\w+(?:\[\])?(?:<[^>]+>)?)\s+(\w+)(?:\s*[=;]|\s*=\s*new\s+\w+)/);
+  if (variableMatch && !line.includes('(') && !line.includes('class ') && !line.includes('import ')) {
+    const dataType = variableMatch[1];
+    const varName = variableMatch[2];
+    const symbolType = line.includes('final') ? 'constant' : 'variable';
+    
+    addSymbol(symbols, varName, symbolType, currentScope, lineNumber, language, `${symbolType === 'constant' ? 'Constant' : 'Variable'} of type ${dataType}`, dataType);
     return;
   }
 
-  // Import statements
+  // Constructor detection (for main method and other constructors)
+  const constructorMatch = line.match(/(?:public|private|protected)?\s*(?:static\s+)?void\s+main\s*\(\s*String\[\]\s+(\w+)\s*\)/);
+  if (constructorMatch) {
+    const paramName = constructorMatch[1];
+    addSymbol(symbols, 'main', 'method', 'global', lineNumber, language, 'Main method', 'void');
+    addSymbol(symbols, paramName, 'parameter', 'local', lineNumber, language, 'Main method parameter', 'String[]');
+    return;
+  }
+
+  // Object instantiation (new ClassName())
+  const newObjectMatch = line.match(/(\w+)\s+(\w+)\s*=\s*new\s+(\w+)\s*\(/);
+  if (newObjectMatch) {
+    const varType = newObjectMatch[1];
+    const varName = newObjectMatch[2];
+    const className = newObjectMatch[3];
+    
+    addSymbol(symbols, varName, 'variable', currentScope, lineNumber, language, `Variable of type ${varType}`, varType);
+    return;
+  }
+  
+  // Simple variable assignments (String name = scanner.nextLine())
+  const simpleVarMatch = line.match(/(\w+)\s+(\w+)\s*=\s*([^;]+)/);
+  if (simpleVarMatch && !line.includes('class ') && !line.includes('import ') && !line.includes('new ') && !line.includes('public ') && !line.includes('static ')) {
+    const varType = simpleVarMatch[1];
+    const varName = simpleVarMatch[2];
+    
+    // Skip if the varType looks like it might be a method (e.g., contains parentheses in the full match)
+    if (!['public', 'private', 'protected', 'static', 'final', 'void'].includes(varType)) {
+      addSymbol(symbols, varName, 'variable', currentScope, lineNumber, language, `Variable of type ${varType}`, varType);
+      return;
+    }
+  }
+
+  // Method calls like System.out.println()
+  const methodCallMatch = line.match(/(\w+)\.(\w+)\.(\w+)\s*\(/);
+  if (methodCallMatch) {
+    const obj1 = methodCallMatch[1]; // System
+    const obj2 = methodCallMatch[2]; // out
+    const method = methodCallMatch[3]; // println
+    
+    // Add System as a class from Java standard library
+    if (!symbols.some(s => s.name === obj1)) {
+      addSymbol(symbols, obj1, 'class', 'global', lineNumber, language, 'Java standard library class', 'class');
+    }
+    // Add out as an object/field
+    if (!symbols.some(s => s.name === obj2)) {
+      addSymbol(symbols, obj2, 'property', 'global', lineNumber, language, `Static field of ${obj1}`, 'PrintStream');
+    }
+    // Add println as a method
+    if (!symbols.some(s => s.name === method)) {
+      addSymbol(symbols, method, 'method', 'global', lineNumber, language, `Method of ${obj2}`, 'void');
+    }
+  }
+
+  // Two-level method calls like object.method()
+  const simpleMethodCallMatch = line.match(/(\w+)\.(\w+)\s*\(/);
+  if (simpleMethodCallMatch && !methodCallMatch) {
+    const object = simpleMethodCallMatch[1];
+    const method = simpleMethodCallMatch[2];
+    
+    // Only add if we haven't already detected this pattern and it's not a built-in
+    if (!['System'].includes(object) && !symbols.some(s => s.name === method && s.line === lineNumber)) {
+      addSymbol(symbols, method, 'method', 'global', lineNumber, language, `Method called on ${object}`, 'unknown');
+    }
+  }
+
+  // Import statements with proper module type
   const importMatch = line.match(/import\s+(?:static\s+)?([^;]+)/);
   if (importMatch) {
-    const imported = importMatch[1].split('.').pop();
+    const fullImport = importMatch[1];
+    const imported = fullImport.split('.').pop();
     if (imported && imported !== '*') {
-      addSymbol(symbols, imported, 'import', scope, lineNumber, language);
+      // Determine if it's a class, package, or module
+      let importType = 'module';
+      if (/^[A-Z]/.test(imported)) {
+        importType = 'class';
+      } else if (fullImport.includes('*')) {
+        importType = 'package';
+      }
+      
+      addSymbol(symbols, imported, 'import', 'global', lineNumber, language, `Imported ${importType}`, importType);
     }
+    return;
   }
 }
 
 function parseC(line: string, lineNumber: number, scope: string, scopeStack: string[], symbols: Symbol[], language: string) {
-  // Function declarations
-  const functionMatch = line.match(/(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*(?:\{|;)/);
-  if (functionMatch && !line.includes('#define')) {
-    addSymbol(symbols, functionMatch[1], 'function', scope, lineNumber, language);
+  // Function declarations with return type and parameters
+  const functionMatch = line.match(/(\w+)\s+(\w+)\s*\(([^)]*)\)\s*(?:\{|;)/);
+  if (functionMatch && !line.includes('#define') && !line.includes('#include')) {
+    const returnType = functionMatch[1];
+    const funcName = functionMatch[2];
+    const params = functionMatch[3];
+    
+    addSymbol(symbols, funcName, 'function', scope, lineNumber, language, `Function returning ${returnType}`, returnType);
+    
+    // Parse function parameters
+    if (params.trim()) {
+      const paramList = params.split(',').map(p => p.trim());
+      paramList.forEach(param => {
+        const paramMatch = param.match(/(\w+)\s+(\w+)/);
+        if (paramMatch) {
+          const paramType = paramMatch[1];
+          const paramName = paramMatch[2];
+          addSymbol(symbols, paramName, 'parameter', 'local', lineNumber, language, `Parameter of type ${paramType}`, paramType);
+        }
+      });
+    }
+    
     if (line.includes('{')) {
-      scopeStack.push(functionMatch[1]);
+      scopeStack.push(funcName);
     }
     return;
   }
 
-  // Variable declarations
-  const variableMatch = line.match(/(?:static\s+)?(?:const\s+)?(\w+)\s+(\w+)(?:\[.*?\])?\s*[=;]/);
-  if (variableMatch && !line.includes('(')) {
-    const type = line.includes('const') ? 'constant' : 'variable';
-    addSymbol(symbols, variableMatch[2], type, scope, lineNumber, language, variableMatch[1]);
+  // Variable declarations with proper type extraction
+  const variableMatch = line.match(/(?:static\s+)?(?:const\s+)?(\w+)\s+(\w+)(?:\[([^\]]*)\])?\s*[=;]/);
+  if (variableMatch && !line.includes('(') && !line.includes('#')) {
+    const dataType = variableMatch[1];
+    const varName = variableMatch[2];
+    const arraySize = variableMatch[3];
+    
+    let finalType = dataType;
+    if (arraySize !== undefined) {
+      finalType = `${dataType}[${arraySize || ''}]`;
+    }
+    
+    const symbolType = line.includes('const') ? 'constant' : 'variable';
+    addSymbol(symbols, varName, symbolType, scope, lineNumber, language, `${symbolType} of type ${finalType}`, finalType);
     return;
   }
 
   // #define macros
-  const defineMatch = line.match(/#define\s+(\w+)/);
+  const defineMatch = line.match(/#define\s+(\w+)\s*(.*)/);
   if (defineMatch) {
-    addSymbol(symbols, defineMatch[1], 'constant', scope, lineNumber, language);
+    const macroName = defineMatch[1];
+    const macroValue = defineMatch[2].trim();
+    let macroType = 'macro';
+    
+    // Try to infer macro type from value
+    if (/^\d+$/.test(macroValue)) {
+      macroType = 'int';
+    } else if (/^\d+\.\d+$/.test(macroValue)) {
+      macroType = 'double';
+    } else if (/^".*"$/.test(macroValue)) {
+      macroType = 'string';
+    }
+    
+    addSymbol(symbols, macroName, 'constant', scope, lineNumber, language, `Macro definition`, macroType);
     return;
   }
 
   // Struct definitions
-  const structMatch = line.match(/struct\s+(\w+)/);
+  const structMatch = line.match(/(?:typedef\s+)?struct\s+(\w+)/);
   if (structMatch) {
-    addSymbol(symbols, structMatch[1], 'class', scope, lineNumber, language);
+    addSymbol(symbols, structMatch[1], 'class', scope, lineNumber, language, 'Struct definition', 'struct');
+    return;
+  }
+  
+  // Include statements
+  const includeMatch = line.match(/#include\s*[<"]([^>"]+)[>"]/);
+  if (includeMatch) {
+    const headerName = includeMatch[1].replace(/\.(h|hpp)$/, '');
+    addSymbol(symbols, headerName, 'import', 'global', lineNumber, language, 'Header file inclusion', 'header');
     return;
   }
 }
@@ -565,13 +862,31 @@ function addSymbol(symbols: Symbol[], name: string, type: Symbol['type'], scope:
   );
   
   if (!exists) {
+    // Determine the actual scope (global or local)
+    let actualScope = scope;
+    if (scope !== 'global') {
+      actualScope = 'local';
+    }
+    
+    // Process the data type from description if not explicitly provided
+    let finalDataType = dataType;
+    if (!finalDataType && description) {
+      if (description.includes('type ')) {
+        finalDataType = description.split('type ')[1];
+      } else if (description === 'Function definition') {
+        finalDataType = 'function';
+      } else if (description === 'builtin_function_or_method') {
+        finalDataType = 'builtin';
+      }
+    }
+
     symbols.push({ 
       name: cleanName, 
       type, 
-      scope, 
+      scope: actualScope, 
       line, 
       language, 
-      dataType: dataType || (description && description.includes('type') ? description.split('type ')[1] : undefined),
+      dataType: finalDataType || (type === 'function' ? 'function' : type === 'builtin' ? 'builtin' : undefined),
       description: description || ''
     });
   }

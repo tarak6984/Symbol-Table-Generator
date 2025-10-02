@@ -1,6 +1,6 @@
 export interface Symbol {
   name: string;
-  type: 'variable' | 'function' | 'class' | 'method' | 'parameter' | 'constant' | 'import' | 'builtin' | 'property' | 'constructor';
+  type: 'variable' | 'function' | 'class' | 'method' | 'parameter' | 'constant' | 'import' | 'builtin' | 'property' | 'constructor' | 'string literal';
   scope: string;
   line: number;
   dataType?: string;
